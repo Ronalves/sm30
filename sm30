@@ -1,0 +1,122 @@
+MODULE ys4_busca_bp INPUT.
+***********************************************************************
+****************************************              *
+*                          CITROSUCO S.A.
+*                     CONFIDENCIAL E PROPRIETÁRIO
+*                    TODOS OS DIREITOS RESERVADOS
+****************************************              *
+***********************************************************************
+* Projeto           : Citrosuco
+* Objetivo          : Dem GTM25.1
+* Analista Funcional: Alberto Condotta
+* Analista Técnico  : Ronaldo Alves
+* Data              : 17.09.2019
+* Transação         : YS4TM_CPFS_BLOQUEADO
+* Objetos           : N/A
+*----------------------------------------------------------------------
+*----------------------------------------------------------------------
+* HISTÓRICO DE MODIFICAÇÕES
+*----------------------------------------------------------------------
+* DD/MM/AAAA - Autor       - Projeto/Demanda - Descrição da Alteração
+*----------------------------------------------------------------------
+*************
+**Estruturas*
+*************
+  DATA:e_ddic_structure TYPE tabname,
+       e_dynpfields     TYPE dynpread.
+
+***********
+**Tabelas**
+***********
+  DATA:lt_return_tab TYPE STANDARD TABLE OF ddshretval,
+       lt_dynpfields TYPE TABLE OF dynpread.
+
+*************
+**Variáveis**
+*************
+  DATA:vl_retfield    TYPE dfies-fieldname,
+       vl_pgmname     TYPE d020s-prog,
+       vl_dynno       TYPE d020s-dnum,
+       vl_cursor_line TYPE systepl.
+
+*************
+**Constants**
+*************
+  CONSTANTS:cc_br2(3)     TYPE c VALUE 'BR2',
+            cc_cpf(19)    TYPE c VALUE 'YS4TM_CHECK_CPF-CPF',
+            cc_1(4)       TYPE c VALUE '0001',
+            cc_partner(7) TYPE c VALUE 'PARTNER',
+            cc_org        TYPE ddbool_d VALUE 'S'.
+*-------------------------------------------------------------------------------------------
+  CLEAR: lt_dynpfields[],vl_cursor_line.
+
+  GET CURSOR LINE vl_cursor_line.
+  e_dynpfields-fieldname = cc_cpf.
+  e_dynpfields-stepl = vl_cursor_line.
+  vl_dynno = cc_1.
+
+  APPEND e_dynpfields TO lt_dynpfields.
+  vl_pgmname = sy-repid.
+
+  CALL FUNCTION 'DYNP_VALUES_READ'
+    EXPORTING
+      dyname                   = vl_pgmname
+      dynumb                   = vl_dynno
+      translate_to_upper       = 'X'
+      request                  = ' '
+      perform_conversion_exits = ' '
+      perform_input_conversion = ' '
+      determine_loop_index     = ' '
+    TABLES
+      dynpfields               = lt_dynpfields
+    EXCEPTIONS
+      invalid_abapworkarea     = 1
+      invalid_dynprofield      = 2
+      invalid_dynproname       = 3
+      invalid_dynpronummer     = 4
+      invalid_request          = 5
+      no_fielddescription      = 6
+      invalid_parameter        = 7
+      undefind_error           = 8
+      double_conversion        = 9
+      stepl_not_found          = 10
+      OTHERS                   = 11.
+*-------------------------------------------------------------------------------------------
+  READ TABLE lt_dynpfields INTO DATA(e_dynpro) INDEX 1.
+  IF sy-subrc = 0.
+    CHECK e_dynpro-fieldvalue IS NOT INITIAL.
+
+    SELECT partner
+           FROM dfkkbptaxnum
+           INTO TABLE @DATA(lt_bp)
+           WHERE taxtype = @cc_br2
+           AND taxnum = @e_dynpro-fieldvalue.
+
+    IF lt_bp[] IS NOT INITIAL.
+      vl_retfield  = cc_partner.
+      CALL FUNCTION 'F4IF_INT_TABLE_VALUE_REQUEST'
+        EXPORTING
+          retfield        = vl_retfield
+          value_org       = cc_org
+        TABLES
+          value_tab       = lt_bp
+          return_tab      = lt_return_tab
+        EXCEPTIONS
+          parameter_error = 1
+          no_values_found = 2
+          OTHERS          = 3.
+      IF sy-subrc <> 0.
+* Implement suitable error handling here
+      ENDIF.
+*-------------------------------------------------------------------------------------------
+      READ TABLE lt_return_tab INTO DATA(e_return) INDEX 1.
+      IF sy-subrc = 0.
+        ys4tm_check_cpf-bupartner = e_return-fieldval.
+      ENDIF.
+*-------------------------------------------------------------------------------------------
+      DATA(ys4_io) = NEW yocltm_cnhportal( ).
+      ys4tm_check_cpf-nome = ys4_io->busca_nome( i_bp = ys4tm_check_cpf-bupartner ).
+*-------------------------------------------------------------------------------------------
+    ENDIF.
+  ENDIF.
+ENDMODULE.
